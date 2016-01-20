@@ -1,91 +1,105 @@
 require 'csv'
+require 'pg'
 
 # Represents a person in an address book.
 class Contact
 
   attr_accessor :name, :email, :id
 
-  def initialize(name, email, id)
-    # TODO: Assign parameter values to instance variables.
+  def initialize(name, email, id = nil)
     @name = name
     @email = email
     @id = id
-    # @addition = name, email
   end
 
+  def to_s
+    "ID ##{@id} Name: #{@name}, Email: #{@email}"
+  end
 
+  def persisted?
+    !id.nil?
+  end
 
+  def save
+    if persisted?
+      res = self.class.conn.exec_params("UPDATE contacts SET name = $1, email = $2 WHERE id = $3::int", [name, email, id])
+    else
+      res = self.class.conn.exec_params("INSERT INTO contacts (name, email) VALUES ($1, $2)", [name, email])
+      self.id = res[0]['id']
+    end
+  end
+
+  def destroy(id)
+    self.class.conn.exec_params("DELETE FROM contacts WHERE id = $1::int", [id]) if persisted?
+  end
+
+  # def update
+  #   # self.name = name
+  #   # self.email = email
+  #   # save
+
+  #   # contact.name = new_name
+  #   # contact.email = new_email
+  #   # contact.save
+  #   res = Contact.conn.exec_params("UPDATE contacts SET name = $1, email = $2 WHERE id = $1::int", [new_name])
+  # end
+    
   # Provides functionality for managing a list of Contacts in a database.
   class << self
 
+    def conn
+      conn = PG.connect(
+        host: 'localhost',
+        dbname: 'contactlist',
+        user: 'development',
+        password: 'development'
+        )
+    end
+
+    def res_to_contact(res)
+      res.map do |hash|
+        Contact.new(hash['name'], hash['email'], hash['id'])
+      end
+    end
+
     # Returns an Array of Contacts loaded from the database.
     def all
-    # TODO: Return an Array of Contact instances made from the data in 'contacts.csv'.
-    flag = false
-      CSV.foreach('contacts.csv') do |row|
-        flag = true
-        print $.
-        print row
-        puts
-      end
+      res = conn.exec_params("SELECT * FROM contacts")
+      res_to_contact res
     end
 
     # Creates a new contact, adding it to the database, returning the new contact.
     def create(name, email)
-      # TODO: Instantiate a Contact, add its data to the 'contacts.csv' file, and return it.
-      CSV.foreach('contacts.csv') do |row|
-      end
-      id=$.
-      new_contact = Contact.new(name, email, id)
-      full_contact = new_contact.id, new_contact.name, new_contact.email
-      CSV.open('contacts.csv', 'a+') do |csv|
-      csv << full_contact
-      end
-      return new_contact
-    end
-
-    def get_name
-      # name = gets.chomp
-      # #puts "Hello !!!"
-    end
-
-    def get_email
-      #email = gets.chomp
+      new_contact = Contact.new
+      new_contact.name = name
+      new_contact.email = email
+      new_contact.save
+      new_contact
     end
 
     # Returns the contact with the specified id. If no contact has the id, returns nil.
     def find(id)
-       # TODO: Find the Contact in the 'contacts.csv' file with the matching id.
-      flag = false
-      CSV.foreach('contacts.csv') do |csv|
-        if id.to_i == csv[0].to_i
-          flag = true
-          puts csv
-          break
-        end
-      end
-      if flag == false
-        puts "Record not found"
-      end
+      res = conn.exec_params("SELECT * FROM contacts WHERE id = $1::int", [id])
+      res_to_contact(res).first
     end
+
+
+    # def update(id)
+    #   contact = self.find(id)
+    #   contact.name = new_name
+    #   contact.email = new_email
+    #   contact.save
+    #   res = conn.exec_params("UPDATE contacts SET name = $1, email = $2 WHERE id = $1::int", [new_name])
+    # end
 
     # Returns an array of contacts who match the given term.
     def search(term)
-      # TODO: Select the Contact instances from the 'contacts.csv' file whose name or email attributes contain the search term.
-      flag = false
-      CSV.foreach('contacts.csv') do |csv|
-        if term.downcase == csv[1].downcase
-          flag = true
-          puts "ID #{csv[0]}: #{csv[1]} (#{csv[2]})"
-          break
-        end
-      end
-      if flag == false
-        puts "This contact isn't listed."
-      end
+      lc_term = term.downcase
+      uc_term = term.upcase
+      res = conn.exec_params("SELECT * FROM contacts WHERE name LIKE $1 OR name LIKE $2 OR email LIKE $1 OR email LIKE $2", ["%#{lc_term}%", "%#{uc_term}%"])
+      res_to_contact res
     end
 
   end
-
 end
 
